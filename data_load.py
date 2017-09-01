@@ -147,11 +147,16 @@ def load_data(dir_):
     q_char_len = pad_data(q_char_len,q_max_word)
 
     # shapes of each data
-    shapes=[(p_max_word,),(q_max_word,),
-            (p_max_word,p_max_char,),(q_max_word,q_max_char,),
-            (1,),(1,),
+    shapes=[(p_max_word,Params.emb_size),(q_max_word,Params.emb_size),
+            (p_max_word,p_max_char,Params.emb_size),(q_max_word,q_max_char,Params.emb_size),
+            (),(),
             (p_max_word,),(q_max_word,),
             (2,)]
+    # shapes=[(p_max_word,),(q_max_word,),
+    #         (p_max_word,p_max_char,),(q_max_word,q_max_char,),
+    #         (1,),(1,),
+    #         (p_max_word,),(q_max_word,),
+    #         (2,)]
 
     return ([p_word_ids, q_word_ids,
             p_char_ids, q_char_ids,
@@ -163,6 +168,11 @@ def get_batch():
     """Loads training data and put them in queues"""
     with tf.device('/cpu:0'):
         # Training set
+        glove = np.memmap(Params.data_dir + "glove.np", dtype = np.float32, mode = "r")
+    	glove = np.reshape(glove,(Params.vocab_size,300))
+    	char_glove = np.memmap(Params.data_dir + "glove_char.np",dtype = np.float32, mode = "r")
+    	char_glove = np.reshape(char_glove,(Params.char_vocab_size,300))
+
         input_list, shapes = load_data(Params.train_dir)
         indices = input_list[-1]
 
@@ -178,10 +188,13 @@ def get_batch():
             '''From `_inputs`, which has been fetched from slice queues,
                then enqueue them again.
             '''
-            return [np.reshape(input_[ind], shapes[i]) for i,input_ in enumerate(input_list)]
+            output = [np.reshape(glove[input_[ind]], shapes[:2][i]) for i,input_ in enumerate(input_list[:2])]
+            output += [np.reshape(char_glove[input_[ind]], shapes[2:4][i]) for i,input_ in enumerate(input_list[2:4])]
+            output += [np.reshape(input_[ind], shapes[4:][i]) for i,input_ in enumerate(input_list[4:])]
+            return output
 
         data = get_data(inputs=ind_list,
-                        dtypes=[np.int32]*9,
+                        dtypes=[np.float32]*4 + [np.int32]*5,
                         capacity=Params.batch_size*32,
                         num_threads=8)
 
@@ -193,4 +206,4 @@ def get_batch():
                                 capacity=Params.batch_size*32,
                                 dynamic_pad=True)
 
-    return batch, Params.data_size // Params.batch_size
+        return batch, Params.data_size // Params.batch_size

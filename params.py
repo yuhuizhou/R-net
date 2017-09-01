@@ -7,7 +7,7 @@ class Params():
     data_dir = "./data/"
     train_dir = data_dir + "trainset/"
     dev_dir = data_dir + "devset/"
-    logdir = "./train/batch_norm"
+    logdir = "./train/adadelta"
     glove_dir = "glove.840B.300d.txt"
     glove_char = "glove.840B.300d.char.txt"
     coreNLP_dir = "./stanford-corenlp-full-2017-06-09"
@@ -34,4 +34,4 @@ class Params():
     char_vocab_size = 95 # Number of characters in glove.840B.300d.char.txt + 1 for an unknown character
     emb_size = 300 # Embeddings size for both words and characters
     attn_size = 75 # RNN celland attention module size
-    num_layers = 3 # Number of layers at question-passage matching and self matching network
+    num_layers = 1 # Number of layers at question-passage matching and self matching network
