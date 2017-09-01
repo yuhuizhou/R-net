@@ -54,11 +54,11 @@ def bidirectional_GRU(inputs, inputs_len, cell = None, units = 75, layers = 1, s
             (cell_fw, cell_bw) = cell
         else:
             if layers > 1:
-                cell_fw = MultiRNNCell([apply_dropout(GRUCell(units),is_training = is_training) for _ in range(layers)])
-                cell_bw = MultiRNNCell([apply_dropout(GRUCell(units),is_training = is_training) for _ in range(layers)])
+                cell_fw = MultiRNNCell([apply_dropout(GRUCell(units, is_training = is_training), is_training = is_training) for _ in range(layers)])
+                cell_bw = MultiRNNCell([apply_dropout(GRUCell(units, is_training = is_training), is_training = is_training) for _ in range(layers)])
             else:
-                cell_fw = GRUCell(units)
-                cell_bw = GRUCell(units)
+                cell_fw = GRUCell(units, is_training = is_training)
+                cell_bw = GRUCell(units, is_training = is_training)
 
         shapes = inputs.get_shape().as_list()
         if len(shapes) > 3:

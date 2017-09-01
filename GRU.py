@@ -36,13 +36,15 @@ class GRUCell(RNNCell):
 			   num_units,
 			   reuse=None,
 			   kernel_initializer=None,
-			   bias_initializer=None):
+			   bias_initializer=None,
+			   is_training = True):
 
 		super(GRUCell, self).__init__(_reuse=reuse)
 		self._num_units = num_units
 		self._activation = math_ops.tanh
 		self._kernel_initializer = kernel_initializer
 		self._bias_initializer = bias_initializer
+		self._is_training = is_training
 
 	@property
 	def state_size(self):
@@ -54,22 +56,17 @@ class GRUCell(RNNCell):
 
 	def __call__(self, inputs, state, scope = None):
 		"""Gated recurrent unit (GRU) with nunits cells."""
-		dim = self._num_units
-		with tf.variable_scope("Gates"):
-			input_below_ = _linear(inputs, 2 * self._num_units, False, scope="out_1")
-			input_below_ = ln(input_below_, 2 * self._num_units, scope = "out_1_ln")
-			state_below_ = _linear(state, 2 * self._num_units, False, scope="out_2")
-			state_below_ = ln(state_below_, 2 * self._num_units, scope = "out_2_ln")
-			out =tf.add(input_below_, state_below_)
-			r, u = array_ops.split(out, 2, 1)
+		with vs.variable_scope("gates"):
+			inputs_ = _linear(inputs, 3 * self._num_units, False, scope="inputs_")
+			state_ = _linear(state, 3 * self._num_units, False, scope="state_")
+			bias = tf.get_variable('bias', [3 * self._num_units], dtype = tf.float32)
+			bn_inputs_ = batch_norm(inputs_, "inputs_bn", is_training = self._is_training)
+			bn_state_ = batch_norm(state_, "states_bn", is_training = self._is_training)
+			hidden = bn_inputs_ + bn_state_ + bias
+			r, u, c = array_ops.split(hidden, 3, 1)
 			r, u = tf.sigmoid(r), tf.sigmoid(u)
-		with tf.variable_scope("Candidate"):
-			input_below_x = _linear(inputs, self._num_units, False, scope="out_3")
-			input_below_x = ln(input_below_x, self._num_units, scope = "out_3_ln")
-			state_below_x = _linear(state, self._num_units, False, scope="out_4")
-			state_below_x = ln(state_below_x, self._num_units, scope = "out_4_ln")
-			c_pre = tf.add(input_below_x,r * state_below_x)
-			c = self._activation(c_pre)
+		with vs.variable_scope("candidate"):
+			c = self._activation(c)
 		new_h = u * state + (1 - u) * c
 		return new_h, new_h
 
@@ -83,7 +80,8 @@ class gated_attention_GRUCell(RNNCell):
 			   gated_attention = None,
 			   reuse=None,
 			   kernel_initializer=None,
-			   bias_initializer=None):
+			   bias_initializer=None,
+			   is_training = True):
 
 		super(gated_attention_GRUCell, self).__init__(_reuse=reuse)
 		self._num_units = num_units
@@ -95,6 +93,7 @@ class gated_attention_GRUCell(RNNCell):
 		self._params = params
 		self._self_matching = self_matching
 		self._gated_attention = gated_attention
+		self._is_training = is_training
 
 	@property
 	def state_size(self):
@@ -115,24 +114,42 @@ class gated_attention_GRUCell(RNNCell):
 									self_matching = self._self_matching,
 									output_argmax = self._output_argmax)
 		with vs.variable_scope("gates"):
-			input_below_ = _linear(inputs, 2 * self._num_units, False, scope="input")
-			input_below_ = ln(input_below_, 2 * self._num_units, scope = "input_ln")
-			state_below_ = _linear(state, 2 * self._num_units, False, scope="state")
-			state_below_ = ln(state_below_, 2 * self._num_units, scope = "state_ln")
-			out =tf.add(input_below_, state_below_)
-			r, u = array_ops.split(out, 2, 1)
+			inputs_ = _linear(inputs, 3 * self._num_units, False, scope="inputs_")
+			state_ = _linear(state, 3 * self._num_units, False, scope="state_")
+			bias = tf.get_variable('bias', [3 * self._num_units], dtype = tf.float32)
+			bn_inputs_ = batch_norm(inputs_, "inputs_bn", is_training = self._is_training)
+			bn_state_ = batch_norm(state_, "states_bn", is_training = self._is_training)
+			hidden = bn_inputs_ + bn_state_ + bias
+			r, u, c = array_ops.split(hidden, 3, 1)
 			r, u = tf.sigmoid(r), tf.sigmoid(u)
 		with vs.variable_scope("candidate"):
-			input_below_x = _linear(inputs, self._num_units, False, scope="input_c")
-			input_below_x = ln(input_below_x, self._num_units, scope = "input_c_ln")
-			state_below_x = _linear(state, self._num_units, False, scope="state_c")
-			state_below_x = ln(state_below_x, self._num_units, scope = "state_c_ln")
-			c_pre = tf.add(input_below_x,r * state_below_x)
-			c = self._activation(c_pre)
+			c = self._activation(c)
 		new_h = u * state + (1 - u) * c
 		return new_h, new_h
 
-def ln(input, dim, epsilon = 1e-5, max = 1000, scope = "layer_norm"):
+def batch_norm(x, name_scope, is_training, epsilon=1e-3, decay=0.999):
+	'''Assume 2d [batch, values] tensor'''
+
+	with tf.variable_scope(name_scope):
+		size = x.get_shape().as_list()[1]
+
+		scale = tf.get_variable('scale', [size], initializer=tf.constant_initializer(0.1))
+		offset = tf.get_variable('offset', [size])
+
+		pop_mean = tf.get_variable('pop_mean', [size], initializer=tf.zeros_initializer, trainable=False)
+		pop_var = tf.get_variable('pop_var', [size], initializer=tf.ones_initializer, trainable=False)
+		batch_mean, batch_var = tf.nn.moments(x, [0])
+
+		train_mean_op = tf.assign(pop_mean, pop_mean * decay + batch_mean * (1 - decay))
+		train_var_op = tf.assign(pop_var, pop_var * decay + batch_var * (1 - decay))
+
+		if is_training:
+			with tf.control_dependencies([train_mean_op, train_var_op]):
+				return tf.nn.batch_normalization(x, batch_mean, batch_var, offset, scale, epsilon)
+		else:
+			return tf.nn.batch_normalization(x, pop_mean, pop_var, offset, scale, epsilon)
+
+def layer_norm(input, dim, epsilon = 1e-5, max = 1000, scope = "layer_norm"):
 	with vs.variable_scope(scope):
 		""" Layer normalizes a 2D tensor along its second axis, which corresponds to batch """
 		s = tf.get_variable("s", shape = dim, initializer=tf.ones_initializer(), dtype=tf.float32)

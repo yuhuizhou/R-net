@@ -109,8 +109,8 @@ class Model(object):
 		for i in range(2):
 			# cell_fw = MultiRNNCell([apply_dropout(gated_attention_GRUCell(Params.attn_size, memory = memory, params = params[i]),is_training = self.is_training) for _ in range(Params.num_layers)])
 			# cell_bw = MultiRNNCell([apply_dropout(gated_attention_GRUCell(Params.attn_size, memory = memory, params = params[i]),is_training = self.is_training) for _ in range(Params.num_layers)])
-			cell_fw = gated_attention_GRUCell(Params.attn_size, memory = memory, params = params[i], self_matching = True if i == 1 else False, gated_attention = gated_attention)
-			cell_bw = gated_attention_GRUCell(Params.attn_size, memory = memory, params = params[i], self_matching = True if i == 1 else False, gated_attention = gated_attention)
+			cell_fw = gated_attention_GRUCell(Params.attn_size, memory = memory, params = params[i], self_matching = True if i == 1 else False, gated_attention = gated_attention, is_training = self.is_training)
+			cell_bw = gated_attention_GRUCell(Params.attn_size, memory = memory, params = params[i], self_matching = True if i == 1 else False, gated_attention = gated_attention, is_training = self.is_training)
 			inputs = attention_rnn(inputs,
 									self.passage_w_len,
 									Params.attn_size,
@@ -131,7 +131,7 @@ class Model(object):
 	def pointer_network(self):
 		params = ((tf.concat((self.params["W_u_Q"],self.params["W_v_Q"]),axis = 0),self.params["v"]),
 					(tf.concat((self.params["W_h_P"],self.params["W_h_a"]),axis = 0),self.params["v"]))
-		cell = apply_dropout(GRUCell(Params.attn_size*2), is_training = self.is_training)
+		cell = apply_dropout(GRUCell(Params.attn_size*2, is_training = self.is_training), is_training = self.is_training)
 		self.points_logits = pointer_net(self.final_bidirectional_outputs, self.passage_w_len, self.question_encoding, cell, params, scope = "pointer_network")
 
 	def loss_function(self):

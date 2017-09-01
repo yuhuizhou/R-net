@@ -7,7 +7,7 @@ class Params():
     data_dir = "./data/"
     train_dir = data_dir + "trainset/"
     dev_dir = data_dir + "devset/"
-    logdir = "./train/ln"
+    logdir = "./train/batch_norm"
     glove_dir = "glove.840B.300d.txt"
     glove_char = "glove.840B.300d.char.txt"
     coreNLP_dir = "./stanford-corenlp-full-2017-06-09"
@@ -20,7 +20,7 @@ class Params():
     p_chars_dir = "chars_context.txt"
 
     # Training
-    debug = True # Set it to True to debug the computation graph
+    debug = False # Set it to True to debug the computation graph
     learning_rate = 1 # Adadelta doesn't require initial learning rate
     optimizer = "adadelta" # Options: ["adadelta", "adam", "gradientdescent", "adagrad"]
     batch_size = 16
