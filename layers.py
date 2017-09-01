@@ -4,8 +4,10 @@
 from tensorflow.contrib.rnn import MultiRNNCell
 from tensorflow.contrib.rnn import RNNCell
 from params import Params
+from GRU import gated_attention_GRUCell, GRUCell
 import tensorflow as tf
 import numpy as np
+import math
 
 '''
 attention weights from https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
@@ -19,17 +21,17 @@ W_h^a.shape:    (2 * attn_size, attn_size)
 W_v^Q.shape:    (attn_size, attn_size)
 '''
 
-def get_attn_params(attn_size,initializer = tf.truncated_normal_initializer()):
+def get_attn_params(attn_size,initializer = tf.truncated_normal_initializer):
     with tf.variable_scope("attention_weights"):
-        params = {"W_u_Q":tf.get_variable("W_u_Q",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer),
-                "W_u_P":tf.get_variable("W_u_P",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer),
-                "W_v_P":tf.get_variable("W_v_P",dtype = tf.float32, shape = (attn_size, attn_size), initializer = initializer),
-                "W_g":tf.get_variable("W_g",dtype = tf.float32, shape = (4 * attn_size, 4 * attn_size), initializer = initializer),
-                "W_h_P":tf.get_variable("W_h_P",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer),
-                "W_v_Phat":tf.get_variable("W_v_Phat",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer),
-                "W_h_a":tf.get_variable("W_h_a",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer),
-                "W_v_Q":tf.get_variable("W_v_Q",dtype = tf.float32, shape = (attn_size, attn_size), initializer = initializer),
-                "v":tf.get_variable("v", dtype = tf.float32, shape = attn_size, initializer = initializer)}
+        params = {"W_u_Q":tf.get_variable("W_u_Q",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(2 * attn_size)))),
+                "W_u_P":tf.get_variable("W_u_P",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(2 * attn_size)))),
+                "W_v_P":tf.get_variable("W_v_P",dtype = tf.float32, shape = (attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(attn_size)))),
+                "W_g":tf.get_variable("W_g",dtype = tf.float32, shape = (4 * attn_size, 4 * attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(4 * attn_size)))),
+                "W_h_P":tf.get_variable("W_h_P",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(2 * attn_size)))),
+                "W_v_Phat":tf.get_variable("W_v_Phat",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(2 * attn_size)))),
+                "W_h_a":tf.get_variable("W_h_a",dtype = tf.float32, shape = (2 * attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(2 * attn_size)))),
+                "W_v_Q":tf.get_variable("W_v_Q",dtype = tf.float32, shape = (attn_size, attn_size), initializer = initializer(stddev=1.0/math.sqrt(float(attn_size)))),
+                "v":tf.get_variable("v", dtype = tf.float32, shape = attn_size, initializer = initializer(stddev=1.0/math.sqrt(float(attn_size))))}
         return params
 
 def encoding(word, char, word_embeddings, char_embeddings, scope = "embedding"):
@@ -52,11 +54,11 @@ def bidirectional_GRU(inputs, inputs_len, cell = None, units = 75, layers = 1, s
             (cell_fw, cell_bw) = cell
         else:
             if layers > 1:
-                cell_fw = MultiRNNCell([apply_dropout(tf.contrib.rnn.GRUCell(units),is_training = is_training) for _ in range(layers)])
-                cell_bw = MultiRNNCell([apply_dropout(tf.contrib.rnn.GRUCell(units),is_training = is_training) for _ in range(layers)])
+                cell_fw = MultiRNNCell([apply_dropout(GRUCell(units),is_training = is_training) for _ in range(layers)])
+                cell_bw = MultiRNNCell([apply_dropout(GRUCell(units),is_training = is_training) for _ in range(layers)])
             else:
-                cell_fw = tf.contrib.rnn.GRUCell(units)
-                cell_bw = tf.contrib.rnn.GRUCell(units)
+                cell_fw = GRUCell(units)
+                cell_bw = GRUCell(units)
 
         shapes = inputs.get_shape().as_list()
         if len(shapes) > 3:
@@ -89,6 +91,26 @@ def pointer_net(passage, passage_len, question, cell, params, scope = "pointer_n
         p2_logits = tf.reshape(scores,(shapes[0],shapes[1]))
         return tf.stack((p1_logits,p2_logits),1)
 
+def gated_attention(memory, inputs, states, units, params, self_matching = False, output_argmax = None, scope="gated_attention"):
+	with tf.variable_scope(scope):
+		weights, W_g = params
+		shapes = memory.get_shape().as_list()
+		inputs_ = tf.stack([inputs] * shapes[1],1)
+		inputs_ = tf.concat((memory,inputs_),axis = 2) # The order doesn't matter
+		states = tf.reshape(states,(Params.batch_size,Params.attn_size))
+
+		if not self_matching:
+			states = tf.stack([states]*shapes[1],1)
+			inputs_ = tf.concat((inputs_,states),axis = 2) # The order matters
+
+		inputs_ = tf.reshape(inputs_,(shapes[0]*shapes[1],-1))
+		scores = attention(inputs_, units, weights)
+		scores = tf.reshape(scores,(shapes[0],shapes[1],1))
+		attention_pool = tf.reduce_sum(scores * memory, 1)
+		inputs = tf.concat((inputs,attention_pool),axis = 1)
+		g_t = tf.sigmoid(tf.matmul(inputs,W_g))
+		return g_t * inputs
+
 def attention_rnn(inputs, inputs_len, units, attn_cell, scope = "gated_attention_rnn", is_training = True):
     with tf.variable_scope(scope):
         (cell_fw, cell_bw) = attn_cell
@@ -112,25 +134,6 @@ def question_pooling(memory, units, weights, scope = "question_pooling"):
         attn = tf.reshape(attn,(shapes[0],shapes[1],1))
         return tf.reduce_sum(attn * memory, 1)
 
-def gated_attention(memory, inputs, states, units, params, self_matching = False, output_argmax = None, scope="gated_attention"):
-    with tf.variable_scope(scope):
-        weights, W_g = params
-        shapes = memory.get_shape().as_list()
-        inputs_ = tf.stack([inputs] * shapes[1],1)
-        inputs_ = tf.concat((memory,inputs_),axis = 2) # The order doesn't matter
-        states = tf.reshape(states,(Params.batch_size,Params.attn_size))
-
-        if not self_matching:
-            states = tf.stack([states]*shapes[1],1)
-            inputs_ = tf.concat((inputs_,states),axis = 2) # The order matters
-
-        inputs_ = tf.reshape(inputs_,(shapes[0]*shapes[1],-1))
-        scores = attention(inputs_, units, weights)
-        scores = tf.reshape(scores,(shapes[0],shapes[1],1))
-        attention_pool = tf.reduce_sum(scores * memory, 1)
-        inputs = tf.concat((inputs,attention_pool),axis = 1)
-        g_t = tf.sigmoid(tf.matmul(inputs,W_g))
-        return g_t * inputs
 
 def attention(inputs, units, weights, scope = "attention", output_fn = "softmax", reuse = None):
     with tf.variable_scope(scope, reuse = reuse):
