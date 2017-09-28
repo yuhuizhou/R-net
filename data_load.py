@@ -129,7 +129,7 @@ def load_data(dir_):
     # Get max length to pad
     p_max_word = np.max(p_word_len)
     p_max_char = max_value(p_char_len)
-    q_max_word = np.max(q_word_len)
+    q_max_word = Params.max_q_len#np.max(q_word_len)
     q_max_char = max_value(q_char_len)
 
     # pad_data
@@ -147,16 +147,11 @@ def load_data(dir_):
     q_char_len = pad_data(q_char_len,q_max_word)
 
     # shapes of each data
-    shapes=[(p_max_word,Params.emb_size),(q_max_word,Params.emb_size),
-            (p_max_word,p_max_char,Params.emb_size),(q_max_word,q_max_char,Params.emb_size),
-            (),(),
+    shapes=[(p_max_word,),(q_max_word,),
+            (p_max_word,p_max_char,),(q_max_word,q_max_char,),
+            (1,),(1,),
             (p_max_word,),(q_max_word,),
             (2,)]
-    # shapes=[(p_max_word,),(q_max_word,),
-    #         (p_max_word,p_max_char,),(q_max_word,q_max_char,),
-    #         (1,),(1,),
-    #         (p_max_word,),(q_max_word,),
-    #         (2,)]
 
     return ([p_word_ids, q_word_ids,
             p_char_ids, q_char_ids,
@@ -164,21 +159,20 @@ def load_data(dir_):
             p_char_len, q_char_len,
             indices], shapes)
 
-def get_batch():
+def get_batch(is_training = True):
     """Loads training data and put them in queues"""
     with tf.device('/cpu:0'):
-        # Training set
-        glove = np.memmap(Params.data_dir + "glove.np", dtype = np.float32, mode = "r")
-    	glove = np.reshape(glove,(Params.vocab_size,300))
-    	char_glove = np.memmap(Params.data_dir + "glove_char.np",dtype = np.float32, mode = "r")
-    	char_glove = np.reshape(char_glove,(Params.char_vocab_size,300))
-
-        input_list, shapes = load_data(Params.train_dir)
+        # Load dataset
+        input_list, shapes = load_data(Params.train_dir if is_training else Params.dev_dir)
         indices = input_list[-1]
 
         train_ind = np.arange(indices.shape[0],dtype = np.int32)
         np.random.shuffle(train_ind)
-        ind_list = tf.convert_to_tensor(train_ind[:Params.data_size])
+
+        size = Params.data_size
+        if Params.data_size > indices.shape[0] or Params.data_size == -1:
+            size = indices.shape[0]
+        ind_list = tf.convert_to_tensor(train_ind[:size])
 
         # Create Queues
         ind_list = tf.train.slice_input_producer([ind_list], shuffle=True)
@@ -188,22 +182,19 @@ def get_batch():
             '''From `_inputs`, which has been fetched from slice queues,
                then enqueue them again.
             '''
-            output = [np.reshape(glove[input_[ind]], shapes[:2][i]) for i,input_ in enumerate(input_list[:2])]
-            output += [np.reshape(char_glove[input_[ind]], shapes[2:4][i]) for i,input_ in enumerate(input_list[2:4])]
-            output += [np.reshape(input_[ind], shapes[4:][i]) for i,input_ in enumerate(input_list[4:])]
-            return output
+            return [np.reshape(input_[ind], shapes[i]) for i,input_ in enumerate(input_list)]
 
         data = get_data(inputs=ind_list,
-                        dtypes=[np.float32]*4 + [np.int32]*5,
+                        dtypes=[np.int32]*9,
                         capacity=Params.batch_size*32,
-                        num_threads=8)
+                        num_threads=6)
 
         # create batch queues
         batch = tf.train.batch(data,
                                 shapes=shapes,
-                                num_threads=8,
+                                num_threads=6,
                                 batch_size=Params.batch_size,
                                 capacity=Params.batch_size*32,
                                 dynamic_pad=True)
 
-        return batch, Params.data_size // Params.batch_size
+    return batch, size // Params.batch_size
