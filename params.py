@@ -42,7 +42,7 @@ class Params():
     vocab_size = 91604 # Number of vocabs in glove.840B.300d.txt + 1 for an unknown token
     char_vocab_size = 95 # Number of characters in glove.840B.300d.char.txt + 1 for an unknown character
     emb_size = 300 # Embeddings size for words
-    char_emb_size = 16 # Embeddings size for characters
+    char_emb_size = 64 # Embeddings size for characters
     attn_size = 75 # RNN cell and attention module size
     num_layers = 3 # Number of layers at question-passage matching
     bias = True # Use bias term in attention

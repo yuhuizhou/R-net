@@ -92,24 +92,6 @@ class Model(object):
 		self.question_encoding = cudnn_GRU(self.question_encoding, self.question_w_len, Params.num_layers,
 											Params.attn_size, self.is_training, concat = False, scope = "question_encoding")
 
-		# # Passage and question encoding
-		# #cell = [MultiRNNCell([GRUCell(Params.attn_size, is_training = self.is_training) for _ in range(3)]) for _ in range(2)]
-		# self.passage_encoding = bidirectional_GRU(self.passage_encoding,
-		# 						self.passage_w_len,
-		# 						cell_fn = SRUCell if Params.SRU else GRUCell,
-		# 						layers = Params.num_layers,
-		# 						scope = "passage_encoding",
-		# 						output = 0,
-		# 						is_training = self.is_training)
-		# #cell = [MultiRNNCell([GRUCell(Params.attn_size, is_training = self.is_training) for _ in range(3)]) for _ in range(2)]
-		# self.question_encoding = bidirectional_GRU(self.question_encoding,
-		# 						self.question_w_len,
-		# 						cell_fn = SRUCell if Params.SRU else GRUCell,
-		# 						layers = Params.num_layers,
-		# 						scope = "question_encoding",
-		# 						output = 0,
-		# 						is_training = self.is_training)
-
 	def attention_match_rnn(self):
 		# Apply gated attention recurrent network for both query-passage matching and self matching networks
 		with tf.variable_scope("attention_match_rnn"):
@@ -134,13 +116,6 @@ class Model(object):
 	def bidirectional_readout(self):
 		self.final_bidirectional_outputs = cudnn_GRU(self.self_matching_output, self.passage_w_len, 1,
 							Params.attn_size, self.is_training, scope = "bidirectional_readout")
-		# self.final_bidirectional_outputs = bidirectional_GRU(self.self_matching_output,
-		# 							self.passage_w_len,
-		# 							cell_fn = SRUCell if Params.SRU else GRUCell,
-		# 							# layers = Params.num_layers, # or 1? not specified in the original paper
-		# 							scope = "bidirectional_readout",
-		# 							output = 0,
-		# 							is_training = self.is_training)
 
 	def pointer_network(self):
 		cell = SRUCell(Params.attn_size * 2)
@@ -260,34 +235,3 @@ if __name__ == '__main__':
 		main()
 	else:
 		print("Invalid mode.")
-
-
-
-# logits, a,b,c,d,e,f,g, dev_loss = sess.run([model.points_logits_stacked,
-# 							model.final_bidirectional_outputs,
-# 							model.self_matching_output,
-# 							model.question_encoding,
-# 							model.passage_encoding,
-# 							model.question_char_encoded,
-# 							model.passage_char_encoded,
-# 							model.question_matching,
-# 							model.mean_loss], feed_dict = feed_dict)
-# print("")
-# print("mean loss: {}".format(dev_loss))
-# print("logits")
-# print(np.sum(np.isnan(logits)))
-# print("final_outputs")
-# print(np.sum(np.isnan(a)))
-# print("self matching")
-# print(np.sum(np.isnan(b)))
-# print("question matching")
-# print(np.sum(np.isnan(g)))
-# print("question_encoding")
-# print(np.sum(np.isnan(c)))
-# print("passage_encoding")
-# print(np.sum(np.isnan(d)))
-# print("question_char_encoded")
-# print(np.sum(np.isnan(e)))
-# print("passage_char_encoded")
-# print(np.sum(np.isnan(f)))
-# exit()
