@@ -55,15 +55,9 @@ class SRUCell(RNNCell):
                 f, r = tf.split(concat, 2, axis = 1)
             with tf.variable_scope("candidates"):
                 c = self._activation(f * state + (1 - f) * x)
-<<<<<<< HEAD
                 # variational dropout as suggested in the paper (disabled)
                 # if self._is_training and Params.dropout is not None:
                 #     c = tf.nn.dropout(c, keep_prob = 1 - Params.dropout)
-=======
-                # variational dropout as suggested in the paper
-                if self._is_training and Params.dropout is not None:
-                    c = tf.nn.dropout(c, keep_prob = 1 - Params.dropout)
->>>>>>> 5b15ef7ab08cb6d32e5c7fbfbc14de071d267f41
             # highway connection
             # Our implementation is slightly different to the paper
             # https://arxiv.org/abs/1709.02755 in a way that highway network
@@ -119,19 +113,10 @@ class GRUCell(RNNCell):
           linear([inputs, r * state], self._num_units, True,
                   self._bias_initializer, self._kernel_initializer))
     #   recurrent dropout as proposed in https://arxiv.org/pdf/1603.05118.pdf (currently disabled)
-<<<<<<< HEAD
       #if self._is_training and Params.dropout is not None:
         #c = tf.nn.dropout(c, 1 - Params.dropout)
     new_h = u * state + (1 - u) * c
     return new_h + res, new_h
-=======
-    #   if self._is_training:
-	# 	c = tf.nn.dropout(c, 1 - 0.2)
-    new_h = u * state + (1 - u) * c
-    return new_h, new_h
-
-class gated_attention_Wrapper(RNNCell):
->>>>>>> 5b15ef7ab08cb6d32e5c7fbfbc14de071d267f41
 
 class gated_attention_Wrapper(RNNCell):
   def __init__(self,
@@ -176,11 +161,7 @@ class gated_attention_Wrapper(RNNCell):
                                 params = self._params,
                                 self_matching = self._self_matching,
                                 memory_len = self._memory_len)
-<<<<<<< HEAD
     output, new_state = self._cell(inputs, state, scope)
-=======
-    output, new_state = self._cell(inputs, state)
->>>>>>> 5b15ef7ab08cb6d32e5c7fbfbc14de071d267f41
     return output, new_state
 
 
