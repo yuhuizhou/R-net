@@ -21,9 +21,9 @@ class Params():
 
     # Training
     mode = "train" # case-insensitive options: ["train", "test", "debug"]
-    dropout = None # dropout probability, if None, don't use dropout
+    dropout = 0.2 # dropout probability, if None, don't use dropout
     zoneout = None # zoneout probability, if None, don't use zoneout
-    optimizer = "adadelta" # Options: ["adadelta", "adam", "gradientdescent", "adagrad"]
+    optimizer = "adam" # Options: ["adadelta", "adam", "gradientdescent", "adagrad"]
     batch_size = 64 if mode is not "test" else 100# Size of the mini-batch for training
     save_steps = 50 # Save the model at every 50 steps
     clip = True # clip gradient norm
@@ -42,7 +42,7 @@ class Params():
     vocab_size = 91604 # Number of vocabs in glove.840B.300d.txt + 1 for an unknown token
     char_vocab_size = 95 # Number of characters in glove.840B.300d.char.txt + 1 for an unknown character
     emb_size = 300 # Embeddings size for words
-    char_emb_size = 64 # Embeddings size for characters
+    char_emb_size = 16 # Embeddings size for characters
     attn_size = 75 # RNN cell and attention module size
     num_layers = 3 # Number of layers at question-passage matching
     bias = True # Use bias term in attention

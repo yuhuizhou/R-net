@@ -51,46 +51,46 @@ class Model(object):
 				self.init_op = tf.global_variables_initializer()
 			else:
 				self.outputs()
-			# total_params()
 
 	def encode_ids(self):
-		with tf.device('/cpu:0'):
-			self.char_embeddings = tf.Variable(tf.constant(0.0, shape=[Params.char_vocab_size, Params.char_emb_size]),trainable=True, name="char_embeddings")
-			self.word_embeddings = tf.Variable(tf.constant(0.0, shape=[Params.vocab_size, Params.emb_size]),trainable=False, name="word_embeddings")
-			self.word_embeddings_placeholder = tf.placeholder(tf.float32,[Params.vocab_size, Params.emb_size],"word_embeddings_placeholder")
-			self.emb_assign = tf.assign(self.word_embeddings, self.word_embeddings_placeholder)
+		with tf.variable_scope("encoder"):
+			with tf.device('/cpu:0'):
+				self.char_embeddings = tf.Variable(tf.constant(0.0, shape=[Params.char_vocab_size, Params.char_emb_size]),trainable=True, name="char_embeddings")
+				self.word_embeddings = tf.Variable(tf.constant(0.0, shape=[Params.vocab_size, Params.emb_size]),trainable=False, name="word_embeddings")
+				self.word_embeddings_placeholder = tf.placeholder(tf.float32,[Params.vocab_size, Params.emb_size],"word_embeddings_placeholder")
+				self.emb_assign = tf.assign(self.word_embeddings, self.word_embeddings_placeholder)
 
-		# Embed the question and passage information for word and character tokens
-		self.passage_word_encoded, self.passage_char_encoded = encoding(self.passage_w,
-										self.passage_c,
-										word_embeddings = self.word_embeddings,
-										char_embeddings = self.char_embeddings,
-										scope = "passage_embeddings")
-		self.question_word_encoded, self.question_char_encoded = encoding(self.question_w,
-										self.question_c,
-										word_embeddings = self.word_embeddings,
-										char_embeddings = self.char_embeddings,
-										scope = "question_embeddings")
-		shape = [-1, Params.max_char_len, Params.char_emb_size]
-		self.passage_char_encoded = tf.reshape(self.passage_char_encoded, shape)
-		self.passage_c_len = tf.reshape(self.passage_c_len, (-1,))
-		self.question_char_encoded = tf.reshape(self.question_char_encoded, shape)
-		self.question_c_len = tf.reshape(self.question_c_len, (-1,))
-		self.passage_char_encoded = cudnn_GRU(self.passage_char_encoded, self.passage_c_len, 1,
-												Params.attn_size, self.is_training, output_order = 1,
-												scope = "char_passage_encoding", batch_size = Params.batch_size * Params.max_p_len)
-		self.question_char_encoded = cudnn_GRU(self.question_char_encoded, self.question_c_len, 1,
-												Params.attn_size, self.is_training, output_order = 1,
-												scope = "char_question_encoding", batch_size = Params.batch_size * Params.max_q_len)
-		self.passage_char_encoded = tf.reshape(self.passage_char_encoded, (Params.batch_size, Params.max_p_len,-1))
-		self.question_char_encoded = tf.reshape(self.question_char_encoded, (Params.batch_size, Params.max_q_len,-1))
-		self.passage_encoding = tf.concat((self.passage_word_encoded, self.passage_char_encoded),axis = 2)
-		self.question_encoding = tf.concat((self.question_word_encoded, self.question_char_encoded),axis = 2)
+			# Embed the question and passage information for word and character tokens
+			self.passage_word_encoded, self.passage_char_encoded = encoding(self.passage_w,
+											self.passage_c,
+											word_embeddings = self.word_embeddings,
+											char_embeddings = self.char_embeddings,
+											scope = "passage_embeddings")
+			self.question_word_encoded, self.question_char_encoded = encoding(self.question_w,
+											self.question_c,
+											word_embeddings = self.word_embeddings,
+											char_embeddings = self.char_embeddings,
+											scope = "question_embeddings")
+			shape = [-1, Params.max_char_len, Params.char_emb_size]
+			self.passage_char_encoded = tf.reshape(self.passage_char_encoded, shape)
+			self.passage_c_len = tf.reshape(self.passage_c_len, (-1,))
+			self.question_char_encoded = tf.reshape(self.question_char_encoded, shape)
+			self.question_c_len = tf.reshape(self.question_c_len, (-1,))
+			self.passage_char_encoded = cudnn_GRU(self.passage_char_encoded, self.passage_c_len, 1,
+													Params.attn_size, self.is_training, output_order = 1,
+													scope = "char_passage_encoding", batch_size = Params.batch_size * Params.max_p_len)
+			self.question_char_encoded = cudnn_GRU(self.question_char_encoded, self.question_c_len, 1,
+													Params.attn_size, self.is_training, output_order = 1,
+													scope = "char_question_encoding", batch_size = Params.batch_size * Params.max_q_len)
+			self.passage_char_encoded = tf.reshape(self.passage_char_encoded, (Params.batch_size, Params.max_p_len,-1))
+			self.question_char_encoded = tf.reshape(self.question_char_encoded, (Params.batch_size, Params.max_q_len,-1))
+			self.passage_encoding = tf.concat((self.passage_word_encoded, self.passage_char_encoded),axis = 2)
+			self.question_encoding = tf.concat((self.question_word_encoded, self.question_char_encoded),axis = 2)
 
-		self.passage_encoding = cudnn_GRU(self.passage_encoding, self.passage_w_len, Params.num_layers,
-											Params.attn_size, self.is_training, concat = False, scope = "passage_encoding")
-		self.question_encoding = cudnn_GRU(self.question_encoding, self.question_w_len, Params.num_layers,
-											Params.attn_size, self.is_training, concat = False, scope = "question_encoding")
+			self.passage_encoding = cudnn_GRU(self.passage_encoding, self.passage_w_len, Params.num_layers,
+												Params.attn_size, self.is_training, concat = False, scope = "passage_encoding")
+			self.question_encoding = cudnn_GRU(self.question_encoding, self.question_w_len, Params.num_layers,
+												Params.attn_size, self.is_training, concat = False, scope = "question_encoding")
 
 	def attention_match_rnn(self):
 		# Apply gated attention recurrent network for both query-passage matching and self matching networks
@@ -119,7 +119,7 @@ class Model(object):
 
 	def pointer_network(self):
 		cell = SRUCell(Params.attn_size * 2)
-		self.points_logits = pointer_net(self.final_bidirectional_outputs, self.passage_w_len, self.question_encoding, self.question_w_len, cell, scope = "pointer_network")
+		self.points_logits = pointer_net(self.final_bidirectional_outputs, self.passage_w_len, self.question_encoding, self.question_w_len, cell, is_training = self.is_training, scope = "pointer_network")
 		self.points_logits_stacked = tf.stack(self.points_logits, 1)
 
 	def outputs(self):
@@ -128,12 +128,13 @@ class Model(object):
 	def loss_function(self):
 		with tf.variable_scope("loss"):
 			shapes = self.passage_w.shape
-			# self.indices = tf.one_hot(self.indices, shapes[1])
+			self.indices = tf.one_hot(self.indices, shapes[1])
 			# self.mean_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits = self.points_logits_stacked, labels = self.indices))
-			self.indices_prob = [tf.squeeze(x) for x in tf.split(tf.one_hot(self.indices, shapes[1]),2,axis = 1)]
-			self.mean_loss1 = tf.nn.softmax_cross_entropy_with_logits(labels = self.indices_prob[0], logits = self.points_logits[0])
-			self.mean_loss2 = tf.nn.softmax_cross_entropy_with_logits(labels = self.indices_prob[1], logits = self.points_logits[1])
-			self.mean_loss = tf.reduce_mean(self.mean_loss1 + self.mean_loss2)
+			# self.indices_prob = [tf.squeeze(x) for x in tf.split(tf.one_hot(self.indices, shapes[1]),2,axis = 1)]
+			# self.mean_loss1 = tf.nn.softmax_cross_entropy_with_logits(labels = self.indices_prob[0], logits = self.points_logits[0])
+			# self.mean_loss2 = tf.nn.softmax_cross_entropy_with_logits(labels = self.indices_prob[1], logits = self.points_logits[1])
+			# self.mean_loss = tf.reduce_mean(self.mean_loss1 + self.mean_loss2)
+			self.mean_loss = cross_entropy(self.points_logits_stacked, self.indices)
 			# self.mean_loss = cross_entropy(self.points_logits, self.indices_prob)
 			self.optimizer = optimizer_factory[Params.optimizer](**Params.opt_arg[Params.optimizer])
 			if Params.clip:
@@ -149,7 +150,7 @@ class Model(object):
 		self.F1_placeholder = tf.placeholder(tf.float32, shape = (), name = "F1_placeholder")
 		self.EM = tf.Variable(tf.constant(0.0, shape=(), dtype = tf.float32),trainable=False, name="EM")
 		self.EM_placeholder = tf.placeholder(tf.float32, shape = (), name = "EM_placeholder")
-		self.dev_loss = tf.Variable(tf.constant(5.0, shape=(), dtype = tf.float32),trainable=False, name="dev_loss")
+		self.dev_loss = tf.Variable(tf.constant(10.0, shape=(), dtype = tf.float32),trainable=False, name="dev_loss")
 		self.dev_loss_placeholder = tf.placeholder(tf.float32, shape = (), name = "dev_loss")
 		self.metric_assign = tf.group(tf.assign(self.F1, self.F1_placeholder),tf.assign(self.EM, self.EM_placeholder),tf.assign(self.dev_loss, self.dev_loss_placeholder))
 		tf.summary.scalar('loss_training', self.mean_loss)
@@ -211,7 +212,23 @@ def main():
 						sample = np.random.choice(dev_ind, Params.batch_size)
 						feed_dict = {data: devdata[i][sample] for i,data in enumerate(model.data)}
 						logits, dev_loss = sess.run([model.points_logits_stacked,
+													# model.passage_char_encoded,
+													# model.passage_encoding,
+													# model.question_matching,
+													# model.self_matching_output,
+													# model.final_bidirectional_outputs,
+													# model.points_logits,
 													model.mean_loss], feed_dict = feed_dict)
+						# print("")
+						# print("loss: {}".format(np.sum(np.isnan(dev_loss))))
+						# print("logits: {}".format(np.sum(np.isnan(logits))))
+						# print("passage_char_encoded: {}".format(np.sum(np.isnan(a))))
+						# print("passage_encoding: {}".format(np.sum(np.isnan(b))))
+						# print("question_matching: {}".format(np.sum(np.isnan(c))))
+						# print("self_matching_output: {}".format(np.sum(np.isnan(d))))
+						# print("final_bidirectional_outputs: {}".format(np.sum(np.isnan(e))))
+						# print("points_logits: {}".format(np.sum(np.isnan(f))))
+						# exit()
 						index = np.argmax(logits, axis = 2)
 						F1, EM = 0.0, 0.0
 						for batch in range(Params.batch_size):
@@ -222,11 +239,12 @@ def main():
 						EM /= float(Params.batch_size)
 						sess.run(model.metric_assign,{model.F1_placeholder: F1, model.EM_placeholder: EM, model.dev_loss_placeholder: dev_loss})
 						print("\nTrain_loss: {}\nDev_loss: {}\nDev_Exact_match: {}\nDev_F1_score: {}".format(np.mean(mean_loss), dev_loss,EM,F1))
+						mean_loss = []
 
 if __name__ == '__main__':
 	if Params.mode.lower() == "debug":
 		print("Debugging...")
-		debug()
+		main()
 	elif Params.mode.lower() == "test":
 		print("Testing on dev set...")
 		test()
