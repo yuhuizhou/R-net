@@ -141,31 +141,14 @@ def load_data(dir_):
 
     # to numpy
     indices = np.reshape(np.asarray(indices,np.int32),(-1,2))
-    p_word_len = np.reshape(np.asarray(p_word_len,np.int32),(-1,1))
-    q_word_len = np.reshape(np.asarray(q_word_len,np.int32),(-1,1))
-    # p_char_len = pad_data(p_char_len,p_max_word)
-    # q_char_len = pad_data(q_char_len,q_max_word)
-    p_char_len = pad_char_len(p_char_len, p_max_word, p_max_char)
-    q_char_len = pad_char_len(q_char_len, q_max_word, q_max_char)
-
-    for i in range(p_word_len.shape[0]):
-        if p_word_len[i,0] > p_max_word:
-            p_word_len[i,0] = p_max_word
-    for i in range(q_word_len.shape[0]):
-        if q_word_len[i,0] > q_max_word:
-            q_word_len[i,0] = q_max_word
 
     # shapes of each data
     shapes=[(p_max_word,),(q_max_word,),
             (p_max_word,p_max_char,),(q_max_word,q_max_char,),
-            (1,),(1,),
-            (p_max_word,),(q_max_word,),
             (2,)]
 
     return ([p_word_ids, q_word_ids,
             p_char_ids, q_char_ids,
-            p_word_len, q_word_len,
-            p_char_len, q_char_len,
             indices], shapes)
 
 def get_dev():
@@ -203,7 +186,7 @@ def get_batch(is_training = True):
             return [np.reshape(input_[ind], shapes[i]) for i,input_ in enumerate(input_list)]
 
         data = get_data(inputs=ind_list,
-                        dtypes=[np.int32]*9,
+                        dtypes=[np.int32]*5,
                         capacity=Params.batch_size*32,
                         num_threads=6)
 

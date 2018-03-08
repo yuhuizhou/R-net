@@ -23,10 +23,11 @@ def dot_product_attention(q,
 						  k,
 						  v,
 						  bias,
-						  seq_len = None,
+						  seq_mask = None,
 						  axis = -1,
 						  is_training = True,
 						  scope=None,
+						  dropout = 0.0,
 						  reuse = None):
 	"""dot-product attention.
 	Args:
@@ -45,15 +46,14 @@ def dot_product_attention(q,
 		if bias:
 			b = tf.get_variable("bias", logits.shape[-1], initializer = tf.zeros_initializer())
 			logits += b
-		if seq_len is not None:
-			logits = mask_attn_score(logits, seq_len)
+		if seq_mask is not None:
+			logits = mask_attn_score(logits, seq_mask)
 		weights = tf.nn.softmax(logits, name="attention_weights")
 		# dropping out the attention links for each of the heads
-		if is_training and Params.dropout is not None:
-			weights = tf.nn.dropout(weights, 1.0 - Params.dropout)
+		weights = tf.nn.dropout(weights, 1.0 - dropout)
 		return tf.matmul(weights, v)
 
-def additive_attention(inputs, units, memory_len, scope = "additive_attention", is_training = True, reuse = None):
+def additive_attention(inputs, units, memory_mask, scope = "additive_attention", is_training = True, dropout = 0.0, reuse = None):
 	with tf.variable_scope(scope, reuse = reuse):
 		if type(inputs) == list:
 			inputs = tf.concat(inputs, -1)
@@ -61,10 +61,9 @@ def additive_attention(inputs, units, memory_len, scope = "additive_attention", 
 		out = tf.squeeze(tf.layers.dense(out, 1, use_bias = False, name = "v"))
 		if Params.bias:
 			out += tf.get_variable("bias", out.shape[-1], initializer = tf.zeros_initializer())
-		if is_training and Params.dropout is not None:
-			out = tf.nn.dropout(out, 1 - Params.dropout)
-		if memory_len is not None:
-			out = mask_attn_score(out, memory_len)
+		out = tf.nn.dropout(out, 1 - dropout)
+		if memory_mask is not None:
+			out = mask_attn_score(out, memory_mask)
 		return out
 
 def split_last_dimension(x, n):
@@ -127,37 +126,37 @@ def compute_qkv(query_antecedent,
 def cudnn_GRU(inputs, inputs_len, layers, num_units, is_training, output_order = 0, scope = "cudnn_GRU", concat = True, batch_size = Params.batch_size ):
 	with tf.variable_scope(scope):
 		inputs = tf.transpose(inputs, [1,0,2])
-		res = []
+		shapes = get_shape(inputs)
+		if shapes[-1] != num_units:
+			projection = tf.get_variable("projection", dtype = tf.float32, shape = (1, shapes[-1], num_units), initializer = tf.contrib.layers.xavier_initializer())
+			inputs = tf.nn.conv1d(inputs, projection, 1, "VALID")
+		fw_res = [inputs]
+		bw_res = [inputs]
 		for i in range(layers):
 			shapes = get_shape(inputs)
-			# if shapes[-1] != num_units:
-			# 	projection = tf.get_variable("projection_%d"%i, dtype = tf.float32, shape = (1, shapes[-1], num_units), initializer = tf.contrib.layers.xavier_initializer())
-			# 	skip = tf.nn.conv1d(inputs, projection, 1, "VALID")
-			# else:
-			# 	skip = inputs
 			gru_fw = tf.contrib.cudnn_rnn.CudnnGRU(layers, num_units, shapes[-1])
 			gru_bw = tf.contrib.cudnn_rnn.CudnnGRU(layers, num_units, shapes[-1])
 			h_fw = tf.get_variable("h_fw_%d"%i, dtype = tf.float32, shape = (1, batch_size, num_units), initializer = tf.zeros_initializer())
 			h_bw = tf.get_variable("h_bw_%d"%i, dtype = tf.float32, shape = (1, batch_size, num_units), initializer = tf.zeros_initializer())
-			# w_fw = tf.get_variable("fw_%d"%i, dtype = tf.float32, shape = [gru_fw.params_size()], validate_shape = False, initializer = tf.contrib.layers.xavier_initializer())
-			# w_bw = tf.get_variable("bw_%d"%i, dtype = tf.float32, shape = [gru_fw.params_size()], validate_shape = False, initializer = tf.contrib.layers.xavier_initializer())
 			w_fw = tf.Variable(tf.random_uniform([gru_fw.params_size()], -0.1, 0.1), validate_shape=False)
 			w_bw = tf.Variable(tf.random_uniform([gru_bw.params_size()], -0.1, 0.1), validate_shape=False)
 			with tf.variable_scope("fw_%d"%i):
 				outputs_fw, state_fw = gru_fw(inputs, h_fw, w_fw)
+				outputs_fw += fw_res[-1]
+				fw_res.append(outputs_fw)
 			with tf.variable_scope("bw_%d"%i):
 				inputs_bw = tf.reverse_sequence(inputs, seq_lengths = inputs_len, seq_dim = 0, batch_dim = 1)
 				outputs_bw, state_bw = gru_bw(inputs_bw, h_bw, w_bw)
 				outputs_bw = tf.reverse_sequence(outputs_bw, seq_lengths = inputs_len, seq_dim = 0, batch_dim = 1)
+				outputs_bw += bw_res[-1]
+				bw_res.append(outputs_bw)
 			inputs = tf.concat([outputs_fw, outputs_bw], axis = -1)
-			if is_training and Params.dropout is not None:
-				inputs = tf.nn.dropout(inputs, 1.0 - Params.dropout)
-			res.append(inputs)
+			# if is_training and Params.dropout is not None:
+			# 	inputs = tf.nn.dropout(inputs, 1.0 - Params.dropout)
+			# res.append(inputs)
 		if output_order == 0:
-			if concat:
-				outputs = tf.concat(res, axis = -1)
-			else:
-				outputs = sum(res)
+			# outputs = tf.concat([sum(fw_res), sum(bw_res)], axis = -1)
+			outputs = inputs
 			return tf.transpose(outputs, [1,0,2])
 		else:
 			return tf.squeeze(tf.concat([state_fw, state_bw], axis = -1))
@@ -198,15 +197,15 @@ def bidirectional_GRU(inputs, inputs_len, cell = None, cell_fn = tf.contrib.rnn.
 		elif output == 1:
 			return tf.reshape(tf.concat(states,1),(Params.batch_size, shapes[1], 2*units))
 
-def pointer_net(passage, passage_len, question, question_len, cell, is_training = True, scope = "pointer_network"):
+def pointer_net(passage, passage_mask, question, question_mask, cell, dropout = 0.0, is_training = True, scope = "pointer_network"):
 	'''
 	Answer pointer network as proposed in https://arxiv.org/pdf/1506.03134.pdf.
 
 	Args:
 		passage:        RNN passage output from the bidirectional readout layer (batch_size, timestep, dim)
-		passage_len:    variable lengths for passage length
+		passage_mask:   Passage mask.
 		question:       RNN question output of shape (batch_size, timestep, dim) for question pooling
-		question_len:   Variable lengths for question length
+		question_mask:   Question mask.
 		cell:           rnn cell of type RNN_Cell.
 		params:         Appropriate weight matrices for attention pooling computation
 
@@ -215,30 +214,29 @@ def pointer_net(passage, passage_len, question, question_len, cell, is_training 
 	'''
 	with tf.variable_scope(scope):
 		shapes = get_shape(passage)
-		initial_state = question_pooling(question, units = Params.attn_size, memory_len = question_len, scope = "question_pooling")
-		if is_training and Params.dropout is not None:
-			initial_state = tf.nn.dropout(initial_state, 1 - Params.dropout)
+		initial_state = question_pooling(question, units = Params.attn_size, memory_mask = question_mask, scope = "question_pooling")
+		initial_state = tf.nn.dropout(initial_state, 1 - dropout)
 		initial_state_ = tf.expand_dims(initial_state, 1)
-		p1_logits = attention(passage, initial_state_, Params.attn_size, memory_len = passage_len, scope = "attention", is_training = is_training, additive = True)
+		p1_logits = attention(passage, initial_state_, Params.attn_size, memory_mask = passage_mask, scope = "attention", is_training = is_training, dropout = dropout, additive = True)
 		scores = tf.expand_dims(tf.nn.softmax(p1_logits), -1)
 		attention_pool = tf.reduce_sum(scores * passage,1)
 		_, state = cell(attention_pool, initial_state)
 		state = tf.expand_dims(state, 1)
-		p2_logits = attention(passage, state, Params.attn_size, memory_len = passage_len, scope = "attention", reuse = True, is_training = is_training, additive = True)
+		p2_logits = attention(passage, state, Params.attn_size, memory_mask = passage_mask, scope = "attention", reuse = True, is_training = is_training, dropout = dropout, additive = True)
 		return p1_logits, p2_logits
 
-def question_pooling(memory, units, memory_len = None, scope = "question_pooling"):
+def question_pooling(memory, units, memory_mask = None, scope = "question_pooling"):
 	with tf.variable_scope(scope):
 		shapes = get_shape(memory)
 		# V_r = tf.get_variable("question_param", shape = (1, 1, shapes[-1]), initializer = tf.contrib.layers.xavier_initializer(), dtype = tf.float32)
 		# V_r = tf.tile(V_r, [Params.batch_size, 1, 1])
-		attn = attention(memory, None, shapes[-1], memory_len = memory_len, scope = "question_attention_pooling", additive = True)
+		attn = attention(memory, None, shapes[-1], memory_mask = memory_mask, scope = "question_attention_pooling", additive = True)
 		score = tf.expand_dims(tf.nn.softmax(attn),-1)
 		return tf.reduce_sum(score * memory, 1)
 
-def gated_attention(memory, inputs, units, memory_len = None, is_training = None, scope="gated_attention"):
+def gated_attention(memory, inputs, units, memory_mask = None, dropout = 0.0, is_training = None, scope="gated_attention"):
 	with tf.variable_scope(scope):
-		outputs = attention(inputs, memory, units, memory_len = memory_len, is_training = is_training)
+		outputs = attention(inputs, memory, units, memory_mask = memory_mask, is_training = is_training, dropout = dropout)
 		shape = get_shape(outputs)
 		W_g = tf.get_variable("W_g",dtype = tf.float32, shape = (shape[-1], shape[-1]), initializer = tf.contrib.layers.xavier_initializer())
 		g_t = tf.sigmoid(matmul_3by2(outputs,W_g))
@@ -257,28 +255,30 @@ def cross_entropy(output, target):
 	cross_entropy = -tf.reduce_sum(cross_entropy, [1,2]) # sum across passage timestep
 	return tf.reduce_mean(cross_entropy) # average across batch size
 
-def mask_attn_score(score, memory_sequence_length, score_mask_value = -1e30):
+def mask_attn_score(score, mask, score_mask_value = -1e30):
 	# return score
 	shape = get_shape(score)
-	score_mask = tf.sequence_mask(memory_sequence_length, maxlen=shape[-1], dtype = tf.float32)
-	mask_shape = [s if i in [0,len(shape)-1] else 1 for i,s in enumerate(shape)]
-	score_mask = tf.reshape(score_mask, mask_shape)
-	return score + score_mask_value * (1 - score_mask)
+	mask_shape = [1] * len(shape)
+	mask_shape[0] = -1
+	mask_shape[-1] = shape[-1]
+	mask = tf.reshape(mask, mask_shape)
+	mask = tf.cast(mask, tf.float32)
+	return score + score_mask_value * (1 - mask)
 
 def get_shape(inputs):
 	return inputs.shape.as_list()
 
-def attention(inputs, memory, units, scope = "attention", memory_len = None, reuse = None, additive = False, is_training = True, num_heads = 5):
+def attention(inputs, memory, units, scope = "attention", memory_mask = None, reuse = None, additive = False, is_training = True, dropout = 0.0, num_heads = Params.num_heads):
 	with tf.variable_scope(scope, reuse = reuse):
 		if additive:
 			if memory is None:
-				return additive_attention(inputs, units, memory_len, is_training = is_training, reuse = reuse)
+				return additive_attention(inputs, units, memory_mask = memory_mask, is_training = is_training, dropout = dropout, reuse = reuse)
 			memory = tf.tile(memory, [1, Params.max_p_len, 1])
-			return additive_attention([inputs, memory], units, memory_len, is_training = is_training, reuse = reuse)
+			return additive_attention([inputs, memory], units, memory_mask = memory_mask, is_training = is_training, dropout = dropout, reuse = reuse)
 		qkv = compute_qkv(inputs, memory, units, units)
 		q, k, v = [split_last_dimension(x, num_heads) for x in qkv]
 		key_depth_per_head = units // num_heads
 		q *= key_depth_per_head**-0.5
-		attn = dot_product_attention(q, k, v, Params.bias, seq_len = memory_len, is_training = is_training, scope = "multiplicative_attention", reuse = reuse)
+		attn = dot_product_attention(q, k, v, Params.bias, seq_mask = memory_mask, is_training = is_training, dropout = dropout, scope = "multiplicative_attention", reuse = reuse)
 		attn = combine_last_two_dimensions(tf.transpose(attn,[0, 2, 1, 3]))
 		return tf.concat([inputs, attn], axis = -1)
